@@ -149,7 +149,6 @@ const AVATAR_COLORS = ["#e07a5f","#6EBF8B","#7EC8E3","#F4C95D","#B5A9D4"];
 // ── Utilities ────────────────────────────────────────────────────────
 function uid(){ return Math.random().toString(36).slice(2,9)+Date.now().toString(36); }
 function timeAgo(ts){ const d=(Date.now()-ts)/1000; if(d<60)return"agora"; if(d<3600)return`há ${Math.floor(d/60)}m`; if(d<86400)return`há ${Math.floor(d/3600)}h`; return`há ${Math.floor(d/86400)}d`; }
-function norm(s){ return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9 ]/g," ").trim(); }
 function fmtPrice(n){ return n!=null&&n!==""?`${parseFloat(n).toFixed(2)}€`:""; }
 function fmtDate(date){ return new Date(date).toLocaleDateString("pt-PT",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }
 function isoLocal(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
