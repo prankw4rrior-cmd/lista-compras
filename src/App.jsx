@@ -3,6 +3,9 @@ import { fbGet, fbSet, fbListen } from "./firebase.js";
 
 const FONT_URL = "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&family=DM+Sans:wght@300;400;500&display=swap";
 
+// norm must be defined before LIST_PROFILES (used in getListProfile)
+function norm(s){ return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]/g," ").trim(); }
+
 const LISTS_KEY    = "slv4_lists";
 const HISTORY_KEY  = "slv4_history";
 const PROFILE_KEY  = "slv4_profile";
@@ -175,6 +178,62 @@ const IS = {
     ...(v==="primary"?{background:"#e07a5f",color:"#fff"}:v==="ghost"?{background:"rgba(255,255,255,0.07)",color:"#f0ebe3"}:v==="green"?{background:"#6EBF8B",color:"#fff"}:{background:"rgba(224,122,95,0.15)",color:"#e07a5f"}) }),
 };
 
+// ── AdminModal ───────────────────────────────────────────────────────
+function AdminModal({ user, onlineUsers, onRemoveUser, onClearData, onClose }) {
+  const allUsers = Object.entries(onlineUsers);
+  const now = Date.now();
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+      <div style={{background:"#16213e",borderRadius:"24px 24px 0 0",padding:"20px 20px 40px",paddingBottom:"calc(40px + env(safe-area-inset-bottom))",width:"100%",maxWidth:480,display:"flex",flexDirection:"column",gap:16}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,background:"rgba(255,255,255,0.18)",borderRadius:99,margin:"0 auto 4px"}}/>
+        <div style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,color:"#f0ebe3"}}>⚙️ Admin</div>
+
+        {/* Users section */}
+        <div>
+          <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(240,235,227,0.35)",marginBottom:10}}>Utilizadores ({allUsers.length})</div>
+          {allUsers.length===0&&<div style={{fontSize:13,color:"rgba(240,235,227,0.3)",padding:"8px 0"}}>Nenhum utilizador registado</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {allUsers.map(([uid,u])=>{
+              const isOnline = now-u.lastSeen < 30000;
+              const isMe = uid===user.id;
+              return(
+                <div key={uid} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:14,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)"}}>
+                  <div style={{width:36,height:36,borderRadius:"50%",background:u.color||"#e07a5f",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:"#fff",flexShrink:0}}>
+                    {u.name?.[0]?.toUpperCase()||"?"}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:500,color:"#f0ebe3"}}>{u.name}{isMe&&<span style={{fontSize:11,color:"rgba(240,235,227,0.4)",marginLeft:6}}>(tu)</span>}</div>
+                    <div style={{fontSize:11,marginTop:2,display:"flex",alignItems:"center",gap:5}}>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:isOnline?"#6EBF8B":"rgba(255,255,255,0.2)",display:"inline-block"}}/>
+                      <span style={{color:isOnline?"#6EBF8B":"rgba(240,235,227,0.3)"}}>{isOnline?"Online agora":"Visto "+timeAgo(u.lastSeen)}</span>
+                    </div>
+                  </div>
+                  {!isMe&&(
+                    <button style={{background:"rgba(224,122,95,0.15)",border:"1px solid rgba(224,122,95,0.3)",borderRadius:10,color:"#e07a5f",fontSize:12,padding:"6px 12px",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",WebkitTapHighlightColor:"transparent"}}
+                      onClick={()=>{ if(window.confirm(`Remover ${u.name}?`)) onRemoveUser(uid); }}>
+                      Remover
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Danger zone */}
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:16}}>
+          <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(224,122,95,0.5)",marginBottom:10}}>Zona de perigo</div>
+          <button style={{...IS.btn("accent"),width:"100%",padding:"13px 20px",fontSize:14,background:"rgba(224,122,95,0.12)",border:"1px solid rgba(224,122,95,0.25)",color:"#e07a5f"}} onClick={onClearData}>
+            🗑 Apagar toda a lista e histórico
+          </button>
+        </div>
+
+        <button style={{...IS.btn("ghost"),width:"100%"}} onClick={onClose}>Fechar</button>
+      </div>
+    </div>
+  );
+}
+
 // ── NotifToast ───────────────────────────────────────────────────────
 function NotifToast({ notifs, onDismiss }) {
   if (!notifs.length) return null;
@@ -345,6 +404,8 @@ export default function App() {
   const seenNotifsRef                    = useRef(new Set());
   const [warnMsg,setWarnMsg]             = useState(null);
   const [warnFor,setWarnFor]             = useState("");
+  const [showAdmin,setShowAdmin]         = useState(false);
+  const longPressRef                     = useRef(null);
 
   // ── Boot ───────────────────────────────────────────────────────────
   useEffect(()=>{
@@ -543,7 +604,15 @@ export default function App() {
   const frequent = [...history].sort((a,b)=>b.count-a.count).slice(0,12);
   const totalEst = items.filter(i=>!i.done&&i.price).reduce((s,i)=>s+parseFloat(i.price||0)*parseFloat(i.qty||1),0);
   const doneEst  = items.filter(i=>i.done&&i.price).reduce((s,i)=>s+parseFloat(i.price||0)*parseFloat(i.qty||1),0);
-  const grouped  = CAT_ORDER.map(cid=>({cat:CAT[cid],items:pending.filter(i=>(i.category||defaultCatId)===cid)})).filter(g=>g.items.length>0);
+  // Items whose category doesn't exist in current profile fall back to defaultCatId
+  const normalizedPending = pending.map(i=>({
+    ...i,
+    category: CAT[i.category] ? i.category : defaultCatId
+  }));
+  const grouped = CAT_ORDER.map(cid=>({
+    cat:CAT[cid],
+    items:normalizedPending.filter(i=>i.category===cid)
+  })).filter(g=>g.items.length>0);
 
   async function persistItems(ni){
     if(!activeListId)return;
@@ -680,6 +749,7 @@ export default function App() {
       )}
       {editItem&&<EditModal item={editItem} onSave={saveEdit} onClose={()=>setEditItem(null)}/>}
       {showReminderForm&&<ReminderModal onSave={saveReminder} onClose={()=>setShowReminderForm(false)}/>}
+      {showAdmin&&<AdminModal user={user} onlineUsers={onlineUsers} onRemoveUser={removeUser} onClearData={clearAllData} onClose={()=>setShowAdmin(false)}/>}
 
       <div style={S.page}>
 
@@ -702,7 +772,15 @@ export default function App() {
             <button style={{...IS.btn("ghost"),padding:"9px 13px",fontSize:13}} onClick={()=>setGroupByCat(!groupByCat)}>
               {groupByCat?"☰":"⊞"}
             </button>
-            <div style={{...S.avatar(user.color),cursor:"pointer"}} onClick={handleLogout}>{user.name[0].toUpperCase()}</div>
+            <div
+            style={{...S.avatar(user.color),cursor:"pointer",userSelect:"none"}}
+            onClick={handleLogout}
+            onContextMenu={e=>{e.preventDefault();setShowAdmin(true);}}
+            onTouchStart={()=>{ longPressRef.current=setTimeout(()=>setShowAdmin(true),600); }}
+            onTouchEnd={()=>{ clearTimeout(longPressRef.current); }}
+            onTouchMove={()=>{ clearTimeout(longPressRef.current); }}
+            title="Toque longo para admin"
+          >{user.name[0].toUpperCase()}</div>
           </div>
         </div>
 
@@ -871,7 +949,7 @@ export default function App() {
                 <button style={{...IS.btn("accent"),fontSize:11,padding:"5px 13px"}} onClick={clearDone}>Limpar</button>
               </div>
               {showDone&&done.map(item=>{
-                const cat=CAT[item.category]||CAT["outro"];
+                const cat=CAT[item.category]||CAT[defaultCatId]||Object.values(CAT)[0];
                 return(
                   <div key={item.id} style={{...S.itemRow(true),marginBottom:7}}>
                     <div style={S.check(true,cat.color)} onClick={()=>toggleDone(item.id)}><span style={{color:"#fff",fontSize:13,fontWeight:700}}>✓</span></div>
