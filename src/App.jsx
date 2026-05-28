@@ -1058,7 +1058,7 @@ export default function App() {
           </div>
         )}
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <div style={{...S.avatar(user.color),cursor:"pointer"}} onClick={handleLogout}>{user.name[0].toUpperCase()}</div>
+          <div   style={{...S.avatar(user.color),cursor:"pointer",userSelect:"none"}}   onClick={()=>setShowAdmin(true)}   ... >{user.name[0].toUpperCase()}</div>
           <input ref={quickRef}
             style={{...IS.input,flex:1,padding:"12px 14px"}}
             placeholder={activeList?`Adicionar a "${activeList.name}"…`:"Adicionar produto…"}
